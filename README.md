@@ -4,7 +4,7 @@
 
 ```
 MONGO_URI='ENTER_YOUR_URL'
-PORT=3001
+PORT=3000
 ```
 
 Data format to be added: 
@@ -28,7 +28,7 @@ Data format to be added:
 
 For frontend, you need to create `.env` file and put the following content (remember to change it based on your requirements):
 ```bash
-REACT_APP_BACKEND_URL=http://localhost:3001
+REACT_APP_BACKEND_URL=http://localhost:3000
 ```
 
 ## How to run BE
