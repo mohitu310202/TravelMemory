@@ -1,45 +1,65 @@
-# MERN TravelMemory – Docker Setup Guide
+# MERN TravelMemory – Complete Docker Setup Guide
 
-This document describes how to configure and run the TravelMemory MERN application using Docker containers, a custom Docker network, and a persistent MongoDB volume.
+This guide explains how to build and run the TravelMemory MERN application using Docker images and containers, a custom network, and a persistent MongoDB volume.
 
-## Prerequisites
+## 1. Prerequisites
 
-- Docker Desktop installed and running
-- TravelMemory project containing `backend` and `fronten` directories
+- Docker Desktop installed and running.
+- TravelMemory project with `backend` and `fronten` directories.
+- Node.js application dependencies defined in each directory's `package.json`.
 
-## 1. Create Docker Network
+## 2. Project Structure
 
-Create a custom network for communication between containers.
+```text
+TravelMemory/
+├── backend/
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── package.json
+│   └── index.js
+│
+├── fronten/
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── package.json
+│   └── src/
+│
+└── README.md
+```
+
+## 3. Create a Docker Network
+
+Open a terminal in the project root and execute:
 
 ```bash
 docker network create mern-network-b18a
 ```
 
-Verify:
+Verify the network:
 
 ```bash
 docker network ls
 ```
 
-## 2. Create MongoDB Volume
+The custom network allows the backend to communicate with MongoDB using the container name `mongo`.
 
-Create a persistent volume to store MongoDB data.
+## 4. Create a MongoDB Volume
+
+Create persistent storage for MongoDB:
 
 ```bash
 docker volume create batch18amongo
 ```
 
-Verify:
+Verify the volume:
 
 ```bash
 docker volume ls
 ```
 
-## 3. Run MongoDB Container
+## 5. Run the MongoDB Container
 
 ### Option A: Without exposing the MongoDB port
-
-Use this option when MongoDB is accessed only by containers on the Docker network.
 
 ```bash
 docker run -d --name mongo --network mern-network-b18a -v batch18amongo:/data/db mongo
@@ -47,17 +67,11 @@ docker run -d --name mongo --network mern-network-b18a -v batch18amongo:/data/db
 
 ### Option B: Expose MongoDB on host port 27018
 
-Use this option when you also need to access MongoDB from your host machine.
-
 ```bash
 docker run -d -p 27018:27017 --name mongo --network mern-network-b18a -v batch18amongo:/data/db mongo
 ```
 
-Run only one option. If a container named `mongo` already exists, remove it before recreating it:
-
-```bash
-docker rm -f mongo
-```
+Choose only one option. Option A is sufficient for communication between the backend and MongoDB containers.
 
 Verify:
 
@@ -65,7 +79,19 @@ Verify:
 docker ps
 ```
 
-## 4. Build and Run the Backend
+MongoDB connection string for the backend:
+
+```text
+mongodb://mongo:27017/travelmemory
+```
+
+If the container already exists and you want to recreate it:
+
+```bash
+docker rm -f mongo
+```
+
+## 6. Create the Backend Dockerfile
 
 Navigate to the backend directory:
 
@@ -73,77 +99,203 @@ Navigate to the backend directory:
 cd .\backend
 ```
 
-Build the backend Docker image:
+Create a file named `Dockerfile` without any file extension.
 
-```bash
-docker build . -t merntmbe:v1.0
+Use the following configuration:
+
+```dockerfile
+FROM node:26-alpine3.23
+
+WORKDIR /app
+
+COPY . .
+
+RUN npm install
+
+ENV MONGO_URI=mongodb://mongo:27017/travelmemory
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["node", "index.js"]
 ```
 
-Run the backend container with the MongoDB connection string and custom network:
+**Configuration details:**
 
-```bash
-docker run -d --name backend -p 3001:3001 -e MONGO_URI=mongodb://mongo:27017/travelmemory --network mern-network-b18a merntmbe:v1.0
-```
+- `FROM` selects the Node.js base image.
+- `WORKDIR` sets `/app` as the working directory.
+- `COPY` copies the backend source files.
+- `RUN npm install` installs application dependencies.
+- `MONGO_URI` specifies the MongoDB container hostname.
+- `PORT` configures the backend port.
+- `EXPOSE` documents the container port.
+- `CMD` starts the Node.js application.
 
-Verify the backend container:
+The `ENV MONGO_URI` value can also be overridden when running the container.
 
-```bash
-docker ps
-```
+## 7. Create the Backend .dockerignore File
 
-View backend logs:
-
-```bash
-docker logs backend
-```
-
-**Backend URL:**
+Inside the `backend` directory, create `.dockerignore`:
 
 ```text
-http://localhost:3001/
+.env
+node_modules
+npm-debug.log
 ```
 
-## 5. Build and Run the Frontend
+This prevents local environment secrets and unnecessary dependencies from being copied into the Docker build context.
 
-Navigate to the frontend directory from the project root:
+## 8. Build the Backend Docker Image
 
-```powershell
-cd .\fronten
-```
-
-Build the frontend Docker image:
+From the `backend` directory, execute:
 
 ```bash
-docker build . -t tmfe:v1.0
+docker build -t merntmbe:v1.0 .
 ```
 
-Verify Docker images:
+Verify the image:
 
 ```bash
 docker images
 ```
 
-Run the frontend container:
+The backend image name remains **`merntmbe:v1.0`**.
+
+## 9. Run the Backend Container
+
+Run the backend on port `3001`, attach it to the custom network, and pass the MongoDB connection string:
+
+```bash
+docker run -d --name backend -p 3001:3001 -e MONGO_URI=mongodb://mongo:27017/travelmemory --network mern-network-b18a merntmbe:v1.0
+```
+
+Verify the container:
+
+```bash
+docker ps -a
+```
+
+View logs:
+
+```bash
+docker logs backend
+```
+
+Backend URL:
+
+```text
+http://localhost:3001
+```
+
+From another computer, use the host machine's reachable IPv4 address:
+
+```text
+http://192.168.29.241:3001
+```
+
+Replace the example IP with your actual host IP.
+
+## 10. Create the Frontend Dockerfile
+
+Return to the project root and navigate to the frontend directory:
+
+```powershell
+cd ..
+cd .\fronten
+```
+
+Create a file named `Dockerfile` with this configuration:
+
+```dockerfile
+FROM node:26-alpine3.23
+
+WORKDIR /app
+
+COPY . .
+
+RUN npm install
+
+ENV REACT_APP_BACKEND_URL=http://localhost:3001
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+
+**Configuration details:**
+
+- `FROM` uses the Node.js Alpine image.
+- `WORKDIR` sets the working directory.
+- `COPY` copies the frontend source files.
+- `RUN npm install` installs frontend dependencies.
+- `REACT_APP_BACKEND_URL` configures the backend API URL.
+- `EXPOSE 3000` documents the frontend port.
+- `CMD` starts the frontend development server.
+
+The `localhost` default is suitable only when the browser can access the backend on the same computer. For access from another computer, use the host machine's reachable IP address.
+
+## 11. Create the Frontend .dockerignore File
+
+Inside the `fronten` directory, create `.dockerignore`:
+
+```text
+.env
+node_modules
+npm-debug.log
+build
+```
+
+This excludes local environment files, dependencies, logs, and previously generated build output from the Docker build context.
+
+## 12. Build the Frontend Docker Image
+
+From the `fronten` directory:
+
+```bash
+docker build -t tmfe:v1.0 .
+```
+
+Verify the images:
+
+```bash
+docker images
+```
+
+## 13. Run the Frontend Container
+
+Run the frontend and configure its backend API URL:
 
 ```bash
 docker run -d --name frontend -p 3000:3000 -e REACT_APP_BACKEND_URL=http://192.168.29.241:3001 --network mern-network-b18a tmfe:v1.0
 ```
 
-Replace `192.168.29.241` with your host machine's current IPv4 address if it changes.
+Replace `192.168.29.241` with your actual host machine IPv4 address if it differs.
 
-**Frontend URL:**
+Verify:
 
-```text
-http://192.168.29.241:3000/
+```bash
+docker ps -a
 ```
 
-You can also access it using `http://localhost:3000/` from the same machine.
+View frontend logs:
 
-**Important:** If `REACT_APP_BACKEND_URL` is used by Create React App, its value is generally embedded during the image build. If your frontend uses this behavior, supply the variable during `docker build` or configure runtime environment-variable substitution in the frontend container. Also, the backend URL must be reachable from the browser, not just from another container.
+```bash
+docker logs frontend
+```
 
-## 6. Verify the Complete Setup
+Frontend URL:
 
-Check running containers:
+```text
+http://192.168.29.241:3000
+```
+
+You can also use `http://localhost:3000` in a browser running on the Docker host.
+
+**Important:** If your frontend uses Create React App, `REACT_APP_*` variables are generally read when the development server starts or when the application is built. Your supplied `CMD ["npm", "start"]` starts the development server, so the `docker run -e` override can work. The backend URL must be reachable from the browser, and the backend must allow requests from the frontend origin through its CORS configuration.
+
+## 14. Verify the Complete Application
+
+Check all containers:
 
 ```bash
 docker ps -a
@@ -155,13 +307,13 @@ Check the network:
 docker network inspect mern-network-b18a
 ```
 
-Check the persistent volume:
+Check the volume:
 
 ```bash
 docker volume inspect batch18amongo
 ```
 
-View logs:
+Check logs:
 
 ```bash
 docker logs mongo
@@ -169,60 +321,91 @@ docker logs backend
 docker logs frontend
 ```
 
-## 7. Application Architecture
+Open the frontend in your browser:
 
 ```text
-                 Browser
-                    |
-                    v
-             Frontend :3000
-                    |
-                    v
-             Backend API :3001
-                    |
-                    v
-              MongoDB :27017
-
-        Docker Network: mern-network-b18a
-        MongoDB Volume: batch18amongo
+http://localhost:3000
 ```
 
-The frontend communicates with the backend API. The backend connects to MongoDB through the Docker network using the hostname `mongo`.
+Confirm that the frontend loads, API requests succeed, and MongoDB data is accessible.
 
-The named volume `batch18amongo` preserves MongoDB data even if the MongoDB container is removed and recreated.
+## 15. Application Architecture
 
-## 8. Useful Docker Commands
+```text
+              User Browser
+                   |
+                   v
+           Frontend :3000
+                   |
+                   v
+           Backend API :3001
+                   |
+                   v
+            MongoDB :27017
+
+       Docker Network:
+       mern-network-b18a
+
+       Persistent Volume:
+       batch18amongo
+```
+
+The frontend sends API requests to the backend. The backend connects to MongoDB through the Docker network using `mongo` as the hostname. The named volume preserves database files independently of the MongoDB container lifecycle.
+
+## 16. Useful Docker Commands
 
 | Operation | Command |
 |---|---|
 | List containers | `docker ps -a` |
 | List images | `docker images` |
+| List networks | `docker network ls` |
+| List volumes | `docker volume ls` |
 | Stop backend | `docker stop backend` |
 | Start backend | `docker start backend` |
 | View backend logs | `docker logs backend` |
 | Remove backend container | `docker rm -f backend` |
 | Remove backend image | `docker rmi merntmbe:v1.0` |
-| Inspect Docker network | `docker network inspect mern-network-b18a` |
+| Inspect network | `docker network inspect mern-network-b18a` |
 
-## 9. Cleanup
+## 17. Cleanup
 
-Remove the application containers:
+Remove the containers:
 
 ```bash
 docker rm -f frontend backend mongo
 ```
 
-Remove the Docker network:
+Remove the network:
 
 ```bash
 docker network rm mern-network-b18a
 ```
 
-Optional: Remove the MongoDB volume:
+To remove the MongoDB volume, only when its data is no longer needed:
 
 ```bash
 docker volume rm batch18amongo
 ```
 
-**Warning:** Removing the volume permanently deletes the MongoDB data stored in it. Keep the volume if you want to preserve your database.
+**Warning:** Removing the volume permanently deletes the MongoDB data stored in it.
+
+---
+
+## Final Configuration Summary
+
+| Component | Configuration |
+|---|---|
+| Docker network | `mern-network-b18a` |
+| MongoDB container | `mongo` |
+| MongoDB volume | `batch18amongo` |
+| MongoDB internal port | `27017` |
+| MongoDB optional host port | `27018` |
+| Backend image | `merntmbe:v1.0` |
+| Backend container | `backend` |
+| Backend port | `3001` |
+| Frontend image | `tmfe:v1.0` |
+| Frontend container | `frontend` |
+| Frontend port | `3000` |
+| Frontend URL | `http://localhost:3000` |
+| Backend URL | `http://localhost:3001` |
 
